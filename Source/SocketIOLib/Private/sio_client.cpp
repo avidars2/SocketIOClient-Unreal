@@ -206,6 +206,11 @@ namespace sio
     {
         m_path = path;
     }
+
+    void client::set_open_default_namespace(bool open)
+    {
+        m_impl->set_open_default_namespace(open);
+    }
    
    void client::stop()
    {

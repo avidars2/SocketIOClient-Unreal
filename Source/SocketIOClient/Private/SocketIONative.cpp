@@ -9,6 +9,8 @@
 #include "sio_message.h"
 #include "sio_socket.h"
 #include "Misc/ScopeLock.h"
+#include <string>
+#include <vector>
 
 FSocketIONative::FSocketIONative(const bool bForceTLS, const bool bShouldVerifyTLSCertificate)
 {
@@ -21,6 +23,7 @@ FSocketIONative::FSocketIONative(const bool bForceTLS, const bool bShouldVerifyT
 	bCallbackOnGameThread = true;
 	bUnbindEventsOnDisconnect = false;
 	bForceTLSUse = bForceTLS;
+	bOpenDefaultNamespace = true;
 	InitPrivateClient(bForceTLS, bShouldVerifyTLSCertificate);
 
 	ClearAllCallbacks();
@@ -79,6 +82,14 @@ void FSocketIONative::Connect(const FSIOConnectParams& InConnectParams)
 	QueryMap = USIOMessageConvert::FStringMapToStdStringMap(URLParams.Query);
 	HeadersMap = USIOMessageConvert::FStringMapToStdStringMap(URLParams.Headers);
 
+	//The retry below reconnects "/" or, without it, the namespaces joined so far
+	const bool bOpenDefault = bOpenDefaultNamespace;
+	std::vector<std::string> NamespacesToRetry;
+	for (const FString& Namespace : JoinedNamespaces)
+	{
+		NamespacesToRetry.push_back(USIOMessageConvert::StdString(Namespace));
+	}
+
 	uint32 AuthVersionAtConnect;
 	{
 		FScopeLock Lock(&AuthLock);
@@ -93,7 +104,7 @@ void FSocketIONative::Connect(const FSIOConnectParams& InConnectParams)
 
 	//Connect to the server on a background thread so it never blocks. Weak self: we may be released before this runs
 	TWeakPtr<FSocketIONative> WeakSelf = AsShared();
-	FCULambdaRunnable::RunLambdaOnBackGroundThread([WeakSelf, StdAddressString, StdPathString, QueryMap, HeadersMap, AuthMessage, AuthVersionAtConnect, QueryVersionAtConnect]
+	FCULambdaRunnable::RunLambdaOnBackGroundThread([WeakSelf, StdAddressString, StdPathString, QueryMap, HeadersMap, AuthMessage, AuthVersionAtConnect, QueryVersionAtConnect, bOpenDefault, NamespacesToRetry]
 	{
 		TSharedPtr<FSocketIONative> Self = WeakSelf.Pin();
 		if (!Self.IsValid() || !Self->PrivateClient.IsValid())
@@ -104,6 +115,7 @@ void FSocketIONative::Connect(const FSIOConnectParams& InConnectParams)
 		Self->PrivateClient->set_reconnect_attempts(Self->MaxReconnectionAttempts);
 		Self->PrivateClient->set_reconnect_delay(Self->ReconnectionDelay);
 		Self->PrivateClient->set_path(StdPathString);
+		Self->PrivateClient->set_open_default_namespace(bOpenDefault);
 
 		//Only a connect that goes ahead replaces the auth, and a SetAuth made after this Connect() was queued stays
 		auto UpdateLatestAuth = [&Self, &AuthMessage, AuthVersionAtConnect]
@@ -135,11 +147,21 @@ void FSocketIONative::Connect(const FSIOConnectParams& InConnectParams)
 			}
 			else if (!Self->bIsConnected)
 			{
-				//transport is up but the default namespace isn't, e.g. the server rejected its auth. Retry it.
+				//transport is up but no namespace is, e.g. the server rejected its auth. Retry it.
 				UE_LOG(SocketIO, Log, TEXT("SocketIO retrying namespace connect to %s"), UTF8_TO_TCHAR(StdAddressString.c_str()));
 				UpdateLatestAuth();
 				UpdateLatestQuery();
-				Self->PrivateClient->socket("/")->connect();
+				if (bOpenDefault)
+				{
+					Self->PrivateClient->socket("/")->connect();
+				}
+				else
+				{
+					for (const std::string& Namespace : NamespacesToRetry)
+					{
+						Self->PrivateClient->socket(Namespace)->connect();
+					}
+				}
 				return;
 			}
 			else
@@ -195,12 +217,14 @@ void FSocketIONative::SetQuery(const TMap<FString, FString>& InQuery)
 
 void FSocketIONative::JoinNamespace(const FString& Namespace)
 {
+	JoinedNamespaces.Add(Namespace);
 	//just referencing the namespace will join it, connect() retries it if it was rejected
 	PrivateClient->socket(USIOMessageConvert::StdString(Namespace))->connect();
 }
 
 void FSocketIONative::LeaveNamespace(const FString& Namespace)
 {
+	JoinedNamespaces.Remove(Namespace);
 	PrivateClient->socket(USIOMessageConvert::StdString(Namespace))->close();
 }
 

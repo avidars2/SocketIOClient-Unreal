@@ -101,6 +101,11 @@ namespace sio
 
         void set_path(const std::string& path);
 
+        // Whether each opened transport also opens the default namespace "/" (true, the
+        // socket.io default). With false, only namespaces asked for through socket() are opened,
+        // and every reconnect reopens just those. Set it before connect().
+        void set_open_default_namespace(bool open);
+
         void set_logs_default();
 
         void set_logs_quiet();

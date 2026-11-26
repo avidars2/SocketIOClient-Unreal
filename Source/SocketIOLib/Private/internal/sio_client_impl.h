@@ -65,6 +65,7 @@
 #endif //DEBUG
 #include <asio/deadline_timer.hpp>
 
+#include <atomic>
 #include <memory>
 #include <map>
 #include <thread>
@@ -129,6 +130,7 @@ class ISslCertificateManager;
             virtual void set_reconnect_attempts(unsigned attempts) {};
             virtual void set_reconnect_delay(unsigned millis) {};
             virtual void set_reconnect_delay_max(unsigned millis) {};
+            virtual void set_open_default_namespace(bool open) {};
 
             // used by sio::socket
             virtual void send(packet& p) {};
@@ -197,6 +199,8 @@ class ISslCertificateManager;
         void set_reconnect_delay(unsigned millis) { m_reconn_delay = millis; if (m_reconn_delay_max < millis) m_reconn_delay_max = millis; }
 
         void set_reconnect_delay_max(unsigned millis) { m_reconn_delay_max = millis; if (m_reconn_delay > millis) m_reconn_delay = millis; }
+
+        void set_open_default_namespace(bool open) override { m_open_default_namespace = open; }
 
         void set_logs_default();
 
@@ -359,6 +363,9 @@ class ISslCertificateManager;
 
         //passthrough path of plugin
         std::string m_path;
+
+        // on_open opens "/" too unless this is false (see client::set_open_default_namespace)
+        std::atomic<bool> m_open_default_namespace{true};
 
 #if SIO_TLS
         int verify_mode = -1;

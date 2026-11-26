@@ -97,6 +97,14 @@ public:
 	/** If true will attempt to verify certificate (NB: this currently doesn't work) */
 	bool bUsingTLSCertVerification;
 
+	/**
+	* If true (the default), every opened connection also connects the server's default namespace "/".
+	* Set false to open only the namespaces joined with JoinNamespace (or used by Emit/OnEvent):
+	* reconnects then reopen just those, and Connect's retry rejoins them instead of "/".
+	* Set it before Connect.
+	*/
+	bool bOpenDefaultNamespace;
+
 	/** If true all events are unbound on disconnect */
 	bool bUnbindEventsOnDisconnect;
 
@@ -412,6 +420,8 @@ public:
 	void UnbindEvent(const FString& EventName, const FString& Namespace = TEXT("/"));
 
 protected:
+	/** Namespaces passed to JoinNamespace and not left, for Connect's retry without "/". */
+	TSet<FString> JoinedNamespaces;
 
 	/** On disconnect or mode change bound events become invalid */
 	void ClearInternalCallbacks();

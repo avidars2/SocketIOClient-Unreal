@@ -570,7 +570,10 @@ namespace sio
         m_con = con;
         m_reconn_made = 0;
         this->sockets_invoke_void(socket_on_open());
-        this->socket("");
+        if (m_open_default_namespace)
+        {
+            this->socket("");
+        }
         if (m_open_listener)m_open_listener();
     }
 
